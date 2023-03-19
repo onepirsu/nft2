@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>NFT</title>
+    <script src="../node_modules/web3/dist/web3.min.js"></script>
+    <!--<script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>-->
+    <script src="./assets/abi.js"></script>
+    <style>
+      #main{
+        display:none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>sample nft</h1>
+      <div id="user-profile">
+        <button id="connect" type="button" class="btn btn-warning btn-lg">
+          Connect Wallet
+        </button>
+      </div>
+    </header>
+    <main id="main">
+      <section>
+        <h2>所持NFT一覧</h2>
+        <div id="possession"></div>
+      </section>
+      <section>
+        <h2>NFT発行</h2>
+
+        <label>tokenId</label><input id="tokenId" type="number" name="id" value="">
+        <label>発行数量</label><input id="quantity" type="number" name="quantity" value="">
+        <label>購入コスト</label><input id="tokenCost" type="number" name="tokenCost" value="">
+        
+        <button id="push">NFT発行</button>
+      </section>
+      <section>
+        <button id="get">文字列表示</button>
+        <form id="form"></form>
+      </section>
+    </main>
+    <footer>
+      <span id="username"></span>
+    </footer>
+    <script src="./assets/app.js"></script>
+  </body>
+</html>
