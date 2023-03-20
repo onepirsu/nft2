@@ -10,6 +10,10 @@
 /artifacts/
 /cache/
 /node_modules/
+/package-lock.json
+/package.json
+/hardhat.config.js
+/.env
 
 # Built Visual Studio Code Extensions
 *.vsix
