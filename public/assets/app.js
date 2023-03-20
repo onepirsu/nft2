@@ -37,6 +37,7 @@ document.addEventListener('click', async function(event){
             //要素を追加
             for(let i = 0;i < get.length;i++){
                 var uri = await inst.methods.uri(get[i].id).call();
+                var balance = await inst.methods.balanceOfOwner(get[i].id).call();
                 console.log(uri);
                 // スマートコントラクトのtokenURI()から取得したメタデータのURLを読み込み
                 fetch(uri, {method: 'GET', cache: 'no-cache'})
@@ -46,31 +47,36 @@ document.addEventListener('click', async function(event){
                 .then((result) => {
                     
                     //displayNFT(result);
-                    form_elem.insertAdjacentHTML('beforeend','<p>tokenId：'+get[i].id+'</p><p>発行枚数：'+get[i].issued+'</p><p>購入費用：'+get[i].cost+'</p>'+ '<img src="' + result.image + '" style="width:200px;">');
-                    form_elem.insertAdjacentHTML('beforeend','<input type="hidden" name="tokenId" value="'+get[i].id+'">');
-                    form_elem.insertAdjacentHTML('beforeend','<input type="hidden" name="cost" value="'+get[i].cost+'">');
+                    var cost = get[i].cost / 10 ** 18;
+                    form_elem.insertAdjacentHTML('beforeend','<p>tokenId：'+get[i].id+'</p><p>残数：'+balance+'/総発行枚数：'+get[i].issued+'</p><p>購入費用/枚：'+cost+'ETH</p>'+ '<img src="' + result.image + '" style="width:200px;">');
                     form_elem.insertAdjacentHTML('beforeend','<input type="number" name="quantity['+get[i].id+']" value="">個');
-                    form_elem.insertAdjacentHTML('beforeend','<button type="button" id="balanceof" data-tokenid="'+get[i].id+'">所持数確認</button>');
                     form_elem.insertAdjacentHTML('beforeend','<div id="balanceof_'+get[i].id+'"></div>');
+                    form_elem.insertAdjacentHTML('beforeend','<button type="button" class="purchase" data-tokenid="'+get[i].id+'"data-cost="'+cost+'">購入する</button>');
                 });
-                //form_elem.insertAdjacentHTML('beforeend','<p>tokenId：'+get[i].id+'</p><p>発行枚数：'+get[i].issued+'</p><p>購入費用：'+get[i].cost+'</p>');  
             }
-            //form_elem.insertAdjacentHTML('beforeend','<p>'+get+'</p>');
-            form_elem.insertAdjacentHTML('beforeend','<button type="button" name="purchase" id="purchase">購入する</button>');
 
         }
         
     }
 
     //pushをクリックされたら、チェーン上に情報を登録
-    if (event.target && event.target.id == "push") {    
+    if (event.target && event.target.id == "mint") {    
 
-        var tokenId = document.getElementById("tokenId");
         var quantity = document.getElementById("quantity");
-        var tokenCost = document.getElementById("tokenCost");
-        
+        var tokenCost = document.getElementById("tokenCost").value;
+        tokenCost = web3.utils.toWei(tokenCost.toString(), "ether");
+
         try {
-            await inst.methods.mint(tokenId.value,quantity.value,tokenCost.value).send();
+            const mintTxt = await inst.methods.mint(quantity.value,tokenCost).send();
+            console.log(mintTxt);
+            var eventValues = mintTxt.events.Mint.returnValues;
+            var cost = parseFloat(web3.utils.fromWei(eventValues._cost, "ether"));
+            alert(`
+            Mint successful!\n
+            Token ID: ${eventValues._id} \n
+            Quantity: ${eventValues._quantity}\n
+            Cost: ${cost.toFixed(7)} ETH
+          `);
         } catch (err) {
             throw err;//reject とほぼ同じ
             console.log(err);
@@ -127,46 +133,28 @@ document.addEventListener('click', async function(event){
 
     }
 
-    //所持数確認をクリックされたら、所持数を取得
-    if (event.target && event.target.id == "balanceof") {    
-
-        var tokenId = event.target.dataset.tokenid;
-
-        console.log(user);
-        console.log(tokenId);
-        
-        try {
-            var balance = await inst.methods.balanceOf(user,tokenId).call();
-            if(balance){
-                var balanceof_elem = document.getElementById("balanceof_"+tokenId);
-                //指定要素の中の子要素を削除
-                while(balanceof_elem.lastChild){
-                    balanceof_elem.removeChild(balanceof_elem.lastChild);
-                }
-                balanceof_elem.insertAdjacentHTML('beforeend','<span>'+balance+'個</span>');
-            }
-        } catch (err) {
-            throw err;//reject とほぼ同じ
-            console.log(err);
-        }
-    
-    }
-
     //purchaseをクリックされたら、NFTを購入
-    if (event.target && event.target.id == "purchase") {
+    if (event.target && event.target.className.indexOf('purchase') !== -1) {
 
         var form = document.getElementById("form");
         var form_data = get_form_data(form);
         console.log(form_data);
-        var tokenId = form_data.get('tokenId');
-        var quantity = form_data.get('quantity[0]');
-        var cost = form_data.get('cost') * quantity / (10 ** 18);//jsでは、通常大きな桁数は扱えない為、大きな数字で割り算して、桁数を下げている
+        var tokenId = event.target.dataset.tokenid;
+        var tokenCost = event.target.dataset.cost;
+        var quantity = form_data.get('quantity['+tokenId+']');
+        var cost = tokenCost * quantity;
         cost = web3.utils.toWei(cost.toString(), "ether");//etherからweiに変換している。文字列で値を渡す。
-        console.log(form_data.get('quantity[0]'));
-        console.log(quantity);
-        console.log(cost);
+
         try {
-            await inst.methods.buyToken(user,tokenId,cost,quantity).send({value:cost});
+            const buyTokenTxt = await inst.methods.buyToken(user,tokenId,cost,quantity).send({value:cost});
+            var eventValues = buyTokenTxt.events.BuyToken.returnValues;
+            var cost = parseFloat(web3.utils.fromWei(eventValues._cost, "ether"));
+            alert(`
+            Purchase successful!\n
+            Token ID: ${eventValues._id} \n
+            Quantity: ${eventValues._quantity}\n
+            Cost: ${cost.toFixed(7)} ETH
+          `);
         } catch (err) {
             throw err;//reject とほぼ同じ
             console.log(err);
