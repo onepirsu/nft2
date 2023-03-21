@@ -84,6 +84,57 @@ document.addEventListener('click', async function(event){
     
     }
 
+    //metadataをクリックされたら、metadata URIを変更
+    if (event.target && event.target.id == "metadata") {  
+      var uri = document.getElementById("uri").value;
+
+      try {
+        await inst.methods.setURI(uri).send();
+      } catch (err) {
+          throw err;//reject とほぼ同じ
+          console.log(err);
+      }
+
+    }
+
+    //getBalanceをクリックされたら、残高を表示
+    if (event.target && event.target.id == "getBalance") {  
+
+      try {
+        var balance = await inst.methods.getBalance().call();
+        if(balance < 0){
+          balance = 0;
+        }else{
+          balance = balance / 10 ** 18;
+        }
+
+        var balance_elem = document.getElementById("balance");
+        while(balance_elem.lastChild){
+          balance_elem.removeChild(balance_elem.lastChild);
+        }
+        balance_elem.insertAdjacentHTML('beforeend','<p>残高：'+balance+'ETH</p>');
+
+      } catch (err) {
+          throw err;//reject とほぼ同じ
+          console.log(err);
+      }
+
+    }
+
+      //withdrawをクリックされたら、残高を引き落とす
+      if (event.target && event.target.id == "withdraw") {  
+
+        try {
+
+          await inst.methods.withdraw().send({ from: user });
+  
+        } catch (err) {
+            throw err;//reject とほぼ同じ
+            console.log(err);
+        }
+  
+      }
+
     //pushをクリックされたら、チェーン上に情報を登録
     if (event.target && event.target.id == "connect") {
 

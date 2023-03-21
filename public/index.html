@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <title>NFT</title>
-    <script src="../node_modules/web3/dist/web3.min.js"></script>
-    <!--<script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>-->
+    <!--<script src="../node_modules/web3/dist/web3.min.js"></script>-->
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
     <script src="./assets/abi.js"></script>
     <style>
       #main{
@@ -35,6 +35,15 @@
       <section>
         <button id="get">NFT一覧</button>
         <form id="form"></form>
+      </section>
+      <section>
+        <button id="metadata">メタデータURI変更</button>
+        <input type="text" id="uri" name="uri" value="">
+      </section>
+      <section>
+        <button id="getBalance">残高確認</button>
+        <div id="balance"></div>        
+        <button id="withdraw">残高引落</button>
       </section>
     </main>
     <footer>

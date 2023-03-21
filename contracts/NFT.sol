@@ -17,6 +17,8 @@ contract NFT is ERC1155 ,Ownable{
     //発行するNFTのトークンIDの設定
     uint256 constant FIRST_NFT = 0;//constant:定数
     uint256 constant FIRST_NFT_ISSUED = 5;//constant:定数
+    
+    int256 balance;//NFTコントラクトが所持する残高 (0書き込みだとガス代が掛かる為、符号付きにしてある)
 
     //NFTの構造体定義
     struct NFTStr{
@@ -45,7 +47,8 @@ contract NFT is ERC1155 ,Ownable{
     ------------------------------------------------*/   
     event Mint(uint256 _id, uint256 _quantity, uint256 _cost);
     event BuyToken(uint256 _id, uint256 _quantity, uint256 _cost);
-
+    event Burn(uint256 _id, uint256 _quantity);
+    event SetURI(string _uri);
 
     /**----------------------------------------------
     * 関数修飾子の定義
@@ -56,12 +59,11 @@ contract NFT is ERC1155 ,Ownable{
         _;
     }
 
-
     /**----------------------------------------------
     * コントラクト関数の定義
     ------------------------------------------------*/ 
      //NFTの情報を取得する
-    function getNFTList() public view returns(NFTStr [] memory){
+    function getNFTList() external view returns(NFTStr [] memory){
         return NFTData;
     }
 
@@ -76,7 +78,7 @@ contract NFT is ERC1155 ,Ownable{
     }
 
     //任意のアドレスが所持しているNFTの情報を取得
-    function getOwnNFTList(address _owner) public view returns(uint256 [] memory , uint256 [] memory){
+    function getOwnNFTList(address _owner) external view returns(uint256 [] memory , uint256 [] memory){
         NFTStr[] memory _NFTData = NFTData;
         uint256 _length = _NFTData.length;
         uint256 _balance;
@@ -97,22 +99,44 @@ contract NFT is ERC1155 ,Ownable{
 
     }
 
+    //MetaDataのURIを変更
+    function setURI(string memory _uri) external onlyOwner{
+        require(keccak256(abi.encodePacked(_uri)) != keccak256(abi.encodePacked("")),unicode"URIが入力されていません。");//unicodeを指定する事で、日本語を設定出来る。
+        baseMetadataURIPrefix = _uri;
+        emit SetURI(_uri);
+    }
+
     //NFTの発行者がいくつ所有しているか？＝NFTの残数がいくつか？
-    function balanceOfOwner(uint256 _id) public view existCheck(_id) returns(uint256){
+    function balanceOfOwner(uint256 _id) external view existCheck(_id) returns(uint256){
         address _owner = owner();
         uint256 _balance = balanceOf(_owner,_id);
         return _balance;
     }
 
+    //NTFコントラクトが所持している残高
+    function getBalance() external view onlyOwner returns(int256){
+        return balance;
+    }
+
+    //NTFコントラクトが所持している残高から引き出す
+    function withdraw() external onlyOwner{
+        require(balance > 0,unicode"残高がありません。");
+        uint256 _amount = uint256(balance);
+        balance = -1;//gas代節約の為、0にならない様にしている
+        payable(msg.sender).transfer(_amount);//msg.sender アドレスに、任意の_amountを送金する
+    }
+    
     //NTFを購入
     function buyToken(address _to,uint256 _id,uint256 _cost ,uint256 _quantity) external payable existCheck(_id){
         address _owner = owner();
-        uint256 _balacne = balanceOf(_owner,_id);
-        require(_balacne >= _quantity ,unicode"残数以上の数量が入力されています。");//unicodeを指定する事で、日本語を設定出来る。
+        uint256 _balance = balanceOf(_owner,_id);
+        require(_owner != _to ,unicode"受け取りアドレスが不正です。");//unicodeを指定する事で、日本語を設定出来る。
+        require(_balance >= _quantity ,unicode"残数以上の数量が入力されています。");//unicodeを指定する事で、日本語を設定出来る。
         _safeTransferFrom(_owner,_to,_id,_quantity,"");
+        balance += int256(msg.value);
         emit BuyToken(_id, _quantity, _cost);
     }
-
+    
     /**
     * 新たなNTFを発行
     * _value：発行数量,_cost：購入コスト
@@ -126,6 +150,18 @@ contract NFT is ERC1155 ,Ownable{
         NFTData.push(newNFT);
         exist[_id] = true;
         emit Mint(_id, _quantity, _cost);
+    }
+
+    //NTFを燃やす
+    function burn(address _to,uint256 _id,uint256 _quantity) external{
+        require(msg.sender == _to,unicode"削除する権限はありません。");
+
+        uint256 _balance = balanceOf(_to,_id);
+        require(_balance >= _quantity,unicode"数量が所持数を超えています。");
+
+        //指定のアドレスが所有している指定のIDのNTFを指定の数量燃やす関数
+        _burn(_to, _id, _quantity);
+        emit Burn(_id, _quantity);
     }
 
 }
