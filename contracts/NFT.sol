@@ -124,6 +124,7 @@ contract NFT is ERC1155 ,Ownable{
         uint256 _amount = uint256(balance);
         balance = -1;//gas代節約の為、0にならない様にしている
         payable(msg.sender).transfer(_amount);//msg.sender アドレスに、任意の_amountを送金する
+        //msg.sender.transfer(_amount);//この書き方でもよいかも。
     }
     
     //NTFを購入
