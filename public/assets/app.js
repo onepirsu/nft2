@@ -60,7 +60,7 @@ document.addEventListener('click', async function(event){
     }
 
     //pushをクリックされたら、チェーン上に情報を登録
-    if (event.target && event.target.id == "mint") {    
+    if (event.target && event.target.id == "mint") {
 
         var quantity = document.getElementById("quantity");
         var tokenCost = document.getElementById("tokenCost").value;
