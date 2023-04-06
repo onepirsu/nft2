@@ -7,7 +7,7 @@
 *【このコントラクトの仕様】
 *ミント、バーン、購入、NFT情報の取得など、一般的な機能を所持
 *NFTに有効期限を設定可能
-*有効期限は、token id と　所有者に紐づいている為、マーケットプレイスなどで譲渡しても、有効期限は引き継がれない
+*有効期限は、token id と　所有者に紐づいている
 *有効期限付きのNFTを購入しても、NFTの枚数は増えない。期限が更新されるだけ。
 *metadataのURIは、creator address 毎に紐づいている
 *
@@ -16,6 +16,8 @@
 *価格の変更が可能
 *metadataのURIは、creator address 毎に紐づいている
 *有効期限の追加
+*有効期限のある同一token idのトークンは、複数所持出来ない
+*有効期限のあるトークンは、二次流通出来ない。（open seaなどで売る事が出来ない）
 *クリエイターの在庫数は誰でも閲覧可能
 *トークン購入時、支払金額と、コントラクトが所持しているtoken costの値と比較する
 
@@ -154,23 +156,27 @@ contract NFT is ERC1155 ,Ownable{
         uint256 tokenCost = NFTData[_id].cost;
         uint256 _expirationDate = 0;
         uint256 _cost = _quantity * tokenCost;
-        require(_cost == msg.value ,unicode"支払金額が正しくありません。");//unicodeを指定する事で、日本語を設定出来る。
+        require(_cost == msg.value ,"The payment amount is incorrect.");//unicodeを指定する事で、日本語を設定出来る。
         require(_creater != msg.sender ,unicode"受け取りアドレスが不正です。");//unicodeを指定する事で、日本語を設定出来る。
         require(_quantity > 0,unicode"数量は必須入力です。");//unicodeを指定する事で、日本語を設定出来る。
-        require(_balance >= _quantity ,unicode"残数以上の数量が入力されています。");//unicodeを指定する事で、日本語を設定出来る。
+        require(_balance >= _quantity ,"The quantity entered exceeds the stock amount.");//unicodeを指定する事で、日本語を設定出来る。
 
-        //有効期限が無いトークンの場合 または、有効期限があるトークンで、まだ未所持の場合
-        if(NFTData[_id].expirationDate == 0 || (NFTData[_id].expirationDate != 0 && tokenExpirationDate[msg.sender][_id] == 0)){
+        //有効期限が無いトークンの場合 
+        if(NFTData[_id].expirationDate == 0){
             //トークンを購入者へ送る
             _safeTransferFrom(_creater,msg.sender,_id,_quantity,"");
         }
 
-        //有効期限があるトークンの場合
+        //有効期限があるトークンで、まだ未所持の場合
+        if(NFTData[_id].expirationDate != 0 && tokenExpirationDate[msg.sender][_id] == 0){
+            //何個購入されても"1個だけ"トークンを購入者へ送る
+            _safeTransferFrom(_creater,msg.sender,_id,1,"");
+        }
+
+        //有効期限があるトークンの場合：有効期限をセット
         if(NFTData[_id].expirationDate != 0){
-            _expirationDate = getTokenExpirationDate(NFTData[_id].expirationDate);//有効期限をセット
-            if(_expirationDate > tokenExpirationDate[msg.sender][_id]){//新しい有効期限が既存の有効期限より未来の場合
-                tokenExpirationDate[msg.sender][_id] = _expirationDate;//有効期限の更新
-            }
+            _expirationDate = getTokenExpirationDate(_id,_quantity,NFTData[_id].expirationDate);//有効期限をtimestampで取得
+            tokenExpirationDate[msg.sender][_id] = _expirationDate;//有効期限の更新
         }
 
         //コントラクトのオーナーへのロイヤリティを計算
@@ -202,9 +208,30 @@ contract NFT is ERC1155 ,Ownable{
         emit Withdraw(_amount);
     }
 
+    //有効期限のあるNFTの二次流通を禁止
+    function _beforeTokenTransfer(
+        address operator,
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) internal override {
+        
+        NFTStr [] memory _NFTData = NFTData;
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            uint _id = ids[i];
+            address _creater = exist[_id];
+
+            //送信元とクリエイターのアドレスが同じ場合　もしくは、有効期限の内トークンは転送を許可する
+            require(from == _creater || _NFTData[_id].expirationDate == 0, "Transfer not allowed");
+        }
+        super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
+    }
 
     //新たなNTFを発行
-    function mint(uint256 _quantity,uint256 _cost,uint _expirationDate) external{
+    function mint(uint256 _quantity,uint256 _cost,uint256 _expirationDate) external{
         require(_quantity != 0 ,"quantity required.");
         require(_cost != 0 ,"cost required.");
         uint256 _id = NFTData.length;
@@ -218,8 +245,9 @@ contract NFT is ERC1155 ,Ownable{
     }
 
     //NTFを燃やす
-    function burn(uint256 _id,uint256 _quantity) external{
+    function burn(uint256 _id,uint256 _quantity) external existCheck(_id) createrCheck(msg.sender,_id) {
         uint256 _balance = balanceOf(msg.sender,_id);
+        require(_quantity != 0,"quantity required.");
         require(_balance >= _quantity,unicode"数量が所持数を超えています。");
 
         //指定のアドレスが所有している指定のIDのNTFを指定の数量燃やす関数
@@ -248,14 +276,35 @@ contract NFT is ERC1155 ,Ownable{
         NFTData[_id].cost = _cost;
     }
 
+    //任意のtoken idのcostを取得
+    function getCost(uint256 _id) external view returns (uint256) {
+        return NFTData[_id].cost;
+    }
+
+    //関数実行者の任意のtoken idの有効期限を取得
+    function getExpirationDate(uint256 _id) external view returns (uint256) {
+        uint256 _expirationDate = tokenExpirationDate[msg.sender][_id];//既存の有効期限を取得
+        return _expirationDate;
+    }
+
+
     /* コントラクト内専用の関数 
     ------------------------------------------------*/ 
     //有効期限を取得
-    function getTokenExpirationDate(uint256 _expirationDate) private view returns (uint256) {
-        uint256 addTime =_expirationDate * 24 * 60 * 60;//24 * 60 * 60 = 1日を秒数に変換
+    function getTokenExpirationDate(uint256 _id,uint256 _quantity,uint256 _expirationDate) private view returns (uint256) {
+
+        //規準時間の取得：既存のNFTに有効期限が残っていたら、それに加算。残っていなければ、現在の時刻に加算
+        uint256 _existing_expirationDate = tokenExpirationDate[msg.sender][_id];//既存の有効期限を取得
+        uint256 baseTimestamp = block.timestamp;//現在のtimestamp
+        if(_existing_expirationDate > baseTimestamp){
+            baseTimestamp = _existing_expirationDate;
+        }
+
+        //tokenの購入個数 * 1個当たりの有効期限（日） * 1日を秒数に変換した値
+        uint256 addTime = _quantity * _expirationDate * 24 * 60 * 60;//24 * 60 * 60 = 1日を秒数に変換
         uint256 _tokenExpirationDate = 0;
         if(addTime != 0){
-            _tokenExpirationDate = block.timestamp + addTime;
+            _tokenExpirationDate = baseTimestamp + addTime;
         }
         return _tokenExpirationDate;
     }
