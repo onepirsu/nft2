@@ -1,6 +1,6 @@
 /**
 *ERC-1155: Multi Token Standard
-*snm ver2
+*snm ver2.1
 *【このコントラクトの概要】
 *１つのコントラクトで、複数のユーザーがNFTを発行できる仕様
 
@@ -10,16 +10,10 @@
 *有効期限は、token id と　所有者に紐づいている
 *有効期限付きのNFTを購入しても、NFTの枚数は増えない。期限が更新されるだけ。
 *metadataのURIは、creator address 毎に紐づいている
-*
+*creator がtokenをtransferする時も、有効期限を付与できる
 
-*【v1とv2の主な変更点】
-*価格の変更が可能
-*metadataのURIは、creator address 毎に紐づいている
-*有効期限の追加
-*有効期限のある同一token idのトークンは、複数所持出来ない
-*有効期限のあるトークンは、二次流通出来ない。（open seaなどで売る事が出来ない）
-*クリエイターの在庫数は誰でも閲覧可能
-*トークン購入時、支払金額と、コントラクトが所持しているtoken costの値と比較する
+*【v2とv2.1の主な変更点】
+*transfer関数のoverride
 
 */
 // SPDX-License-Identifier: MIT
@@ -41,7 +35,7 @@ contract NFT is ERC1155 ,Ownable{
         uint256 id;
         uint256 issued;//発行数
         uint256 cost;
-        uint256 expirationDate;//有効期限
+        uint256 expiration;//有効期限
         address creater;
     }
 
@@ -50,7 +44,7 @@ contract NFT is ERC1155 ,Ownable{
     mapping(address=>uint256) balances;//クリエイター毎の残高
     mapping(address=>uint256[]) createTokenId;//クリエイターが発行したtokenID
     mapping(address=>string) baseMetadataURIPrefix;//クリエイター毎のbaseMetadataURI
-    mapping(address=>mapping(uint256=>uint256)) tokenExpirationDate;//購入者のアドレス=>(token_id=>tokenの有効期限:timestamp)
+    mapping(address=>mapping(uint256=>uint256)) tokenExpirationTimestamp;//購入者のアドレス=>(token_id=>tokenの有効期限:timestamp)
 
     NFTStr[] NFTData;//NFTを保存しておく変数
 
@@ -62,8 +56,9 @@ contract NFT is ERC1155 ,Ownable{
     /**----------------------------------------------
     * eventの定義
     ------------------------------------------------*/   
-    event Mint(uint256 _id, uint256 _quantity, uint256 _cost , uint256 _expirationDate);
-    event BuyToken(uint256 _id, uint256 _quantity, uint256 _cost , uint256 _expirationDate);
+    event Mint(uint256 _id, uint256 _quantity, uint256 _cost , uint256 _expiration);
+    event BuyToken(uint256 _id, uint256 _quantity, uint256 _cost , uint256 _expirationTimestamp);
+    event TransferFrom(address _creater,address _to,uint256 _id,uint256 _quantity,uint256 _expirationTimestamp);
     event Burn(uint256 _id, uint256 _quantity);
     event Withdraw(uint256 _amount);
     event SetURI(string _uri);
@@ -88,7 +83,7 @@ contract NFT is ERC1155 ,Ownable{
                 break;
             }
         }
-        require(_flg == true ,"The NFT does not yours.");
+        require(_flg == true ,"You are not the creator of this token.");
         _;
     }
 
@@ -132,53 +127,35 @@ contract NFT is ERC1155 ,Ownable{
         uint256 _balance;
         uint256 _id;
         uint256[] memory _balances = new uint256[](_length); 
-        uint256[] memory _tokenExpirationDate = new uint256[](_length);
+        uint256[] memory _tokenExpirationTimestamp = new uint256[](_length);
 
         for (uint256 _i = 0; _i < _length; _i++){
             _id = _ids[_i];
             _balance = balanceOf(msg.sender,_id);
             _balances[_i] = _balance;//数量
-            if(_NFTData[_id].expirationDate == 0){//有効期限がない場合
-                _tokenExpirationDate[_i] = 9999999999999;//有効期限 timestamp　単位は秒（ミリ秒で計算するプログラムでは1000倍して使用）
+            if(_NFTData[_id].expiration == 0){//有効期限がない場合
+                _tokenExpirationTimestamp[_i] = 9999999999999;//有効期限 timestamp　単位は秒（ミリ秒で計算するプログラムでは1000倍して使用）
             }else{//有効期限がある場合
-                _tokenExpirationDate[_i] = tokenExpirationDate[msg.sender][_id];//有効期限 timestamp
+                _tokenExpirationTimestamp[_i] = tokenExpirationTimestamp[msg.sender][_id];//有効期限 timestamp
             }
         }
 
-        return (_ids,_balances,_tokenExpirationDate);
+        return (_ids,_balances,_tokenExpirationTimestamp);
 
     }
 
     //NTFを購入
     function buyToken(address _creater,uint256 _id,uint256 _quantity) external payable existCheck(_id){
         
-        uint256 _balance = balanceOf(_creater,_id);
         uint256 tokenCost = NFTData[_id].cost;
-        uint256 _expirationDate = 0;
+        uint256 _expirationTimestamp = 0;
+        uint256 _expiration = NFTData[_id].expiration;
         uint256 _cost = _quantity * tokenCost;
-        require(_cost == msg.value ,"The payment amount is incorrect.");//unicodeを指定する事で、日本語を設定出来る。
-        require(_creater != msg.sender ,unicode"受け取りアドレスが不正です。");//unicodeを指定する事で、日本語を設定出来る。
-        require(_quantity > 0,unicode"数量は必須入力です。");//unicodeを指定する事で、日本語を設定出来る。
-        require(_balance >= _quantity ,"The quantity entered exceeds the stock amount.");//unicodeを指定する事で、日本語を設定出来る。
+        require(_cost == msg.value ,"The payment amount is incorrect.");
 
-        //有効期限が無いトークンの場合 
-        if(NFTData[_id].expirationDate == 0){
-            //トークンを購入者へ送る
-            _safeTransferFrom(_creater,msg.sender,_id,_quantity,"");
-        }
-
-        //有効期限があるトークンで、まだ未所持の場合
-        if(NFTData[_id].expirationDate != 0 && tokenExpirationDate[msg.sender][_id] == 0){
-            //何個購入されても"1個だけ"トークンを購入者へ送る
-            _safeTransferFrom(_creater,msg.sender,_id,1,"");
-        }
-
-        //有効期限があるトークンの場合：有効期限をセット
-        if(NFTData[_id].expirationDate != 0){
-            _expirationDate = getTokenExpirationDate(_id,_quantity,NFTData[_id].expirationDate);//有効期限をtimestampで取得
-            tokenExpirationDate[msg.sender][_id] = _expirationDate;//有効期限の更新
-        }
-
+        //tokenを送る
+        _expirationTimestamp = transferFromCreater(_creater,msg.sender,_id,_quantity,_expiration);
+        
         //コントラクトのオーナーへのロイヤリティを計算
         uint256 _ownerRoyalty = (msg.value / 10000) * 300; 
         uint256 _createrAmount = msg.value - _ownerRoyalty; 
@@ -189,7 +166,7 @@ contract NFT is ERC1155 ,Ownable{
         balances[_creater] += _createrAmount;
         balances[_owner] += _ownerRoyalty;
 
-        emit BuyToken(_id, _quantity, _cost, _expirationDate);
+        emit BuyToken(_id, _quantity, _cost, _expirationTimestamp);
 
     }
 
@@ -225,23 +202,23 @@ contract NFT is ERC1155 ,Ownable{
             address _creater = exist[_id];
 
             //送信元とクリエイターのアドレスが同じ場合　もしくは、有効期限の内トークンは転送を許可する
-            require(from == _creater || _NFTData[_id].expirationDate == 0, "Transfer not allowed");
+            require(from == _creater || _NFTData[_id].expiration == 0, "Transfer not allowed");
         }
         super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
     }
 
     //新たなNTFを発行
-    function mint(uint256 _quantity,uint256 _cost,uint256 _expirationDate) external{
+    function mint(uint256 _quantity,uint256 _cost,uint256 _expiration) external{
         require(_quantity != 0 ,"quantity required.");
         require(_cost != 0 ,"cost required.");
         uint256 _id = NFTData.length;
         _mint(msg.sender, _id, _quantity, "");
-        NFTStr memory newNFT = NFTStr(_id,_quantity,_cost,_expirationDate,msg.sender);
+        NFTStr memory newNFT = NFTStr(_id,_quantity,_cost,_expiration,msg.sender);
         NFTData.push(newNFT);
         exist[_id] = msg.sender;
         createTokenId[msg.sender].push(_id);
-        tokenExpirationDate[msg.sender][_id] = 0;//有効期限をセット
-        emit Mint(_id, _quantity, _cost, _expirationDate);
+        tokenExpirationTimestamp[msg.sender][_id] = 0;//有効期限をセット
+        emit Mint(_id, _quantity, _cost, _expiration);
     }
 
     //NTFを燃やす
@@ -282,31 +259,66 @@ contract NFT is ERC1155 ,Ownable{
     }
 
     //関数実行者の任意のtoken idの有効期限を取得
-    function getExpirationDate(uint256 _id) external view returns (uint256) {
-        uint256 _expirationDate = tokenExpirationDate[msg.sender][_id];//既存の有効期限を取得
-        return _expirationDate;
+    function getExpiration(uint256 _id) external view returns (uint256) {
+        uint256 _expiration = tokenExpirationTimestamp[msg.sender][_id];//既存の有効期限を取得
+        return _expiration;
     }
 
+    //createrがtokenを他のアドレスへ送る
+    function transferFromCreater(
+        address _creater,address _to,uint256 _id,uint256 _quantity,uint256 _expiration
+    ) public existCheck(_id) createrCheck(_creater,_id) returns(uint256){
+
+        uint256 _balance = balanceOf(_creater,_id);
+        require(_creater != _to ,"The delivery address is invalid.");//unicodeを指定する事で、日本語を設定出来る。例） unicode"受け取りアドレスが不正です。" 
+        require(_quantity > 0,"Quantity is a required input.");
+        require(_balance >= _quantity ,"The quantity entered exceeds the stock amount.");
+
+        uint256 _expirationTimestamp = 0;
+
+        //有効期限が無いトークンの場合 
+        if(_expiration == 0){
+            //任意の数量のトークンをtoアドレスへ送る
+            _safeTransferFrom(_creater,_to,_id,_quantity,"");
+        }
+
+        //有効期限があるトークンで、まだ未所持の場合
+        if(_expiration != 0 && tokenExpirationTimestamp[_to][_id] == 0){
+            //何個指定されても"1個だけ"トークンをtoアドレスへ送る
+            _safeTransferFrom(_creater,_to,_id,1,"");
+        }
+
+        //有効期限があるトークンの場合：有効期限をセット
+        if(_expiration != 0){
+            _expirationTimestamp = _getTokenExpirationTimestamp(_id,_quantity,_expiration);//有効期限をtimestampで取得
+            tokenExpirationTimestamp[_to][_id] = _expirationTimestamp;//有効期限の更新
+        }
+
+        emit TransferFrom(_creater,_to,_id,_quantity,_expirationTimestamp);
+
+        return _expirationTimestamp;
+
+    }
 
     /* コントラクト内専用の関数 
     ------------------------------------------------*/ 
     //有効期限を取得
-    function getTokenExpirationDate(uint256 _id,uint256 _quantity,uint256 _expirationDate) private view returns (uint256) {
+    function _getTokenExpirationTimestamp(uint256 _id,uint256 _quantity,uint256 _expiration) private view returns (uint256) {
 
         //規準時間の取得：既存のNFTに有効期限が残っていたら、それに加算。残っていなければ、現在の時刻に加算
-        uint256 _existing_expirationDate = tokenExpirationDate[msg.sender][_id];//既存の有効期限を取得
+        uint256 _existingExpiration = tokenExpirationTimestamp[msg.sender][_id];//既存の有効期限を取得
         uint256 baseTimestamp = block.timestamp;//現在のtimestamp
-        if(_existing_expirationDate > baseTimestamp){
-            baseTimestamp = _existing_expirationDate;
+        if(_existingExpiration > baseTimestamp){
+            baseTimestamp = _existingExpiration;
         }
 
         //tokenの購入個数 * 1個当たりの有効期限（日） * 1日を秒数に変換した値
-        uint256 addTime = _quantity * _expirationDate * 24 * 60 * 60;//24 * 60 * 60 = 1日を秒数に変換
-        uint256 _tokenExpirationDate = 0;
+        uint256 addTime = _quantity * _expiration * 24 * 60 * 60;//24 * 60 * 60 = 1日を秒数に変換
+        uint256 _tokenExpirationTimestamp = 0;
         if(addTime != 0){
-            _tokenExpirationDate = baseTimestamp + addTime;
+            _tokenExpirationTimestamp = baseTimestamp + addTime;
         }
-        return _tokenExpirationDate;
+        return _tokenExpirationTimestamp;
     }
 
     

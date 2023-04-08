@@ -16,6 +16,21 @@ describe("NFT contract", function () {
     let owner;
     let alice;
     let bob;
+    const getYmdHis = function(timestamp){
+
+        const date = new Date(timestamp);
+      
+        const year = date.getFullYear(); // 年を取得する
+        const month = date.getMonth() + 1; // 月を取得する（0が1月なので1を足す）
+        const day = date.getDate(); // 日を取得する
+        const hour = date.getHours(); // 時を取得する
+        const minute = date.getMinutes(); // 分を取得する
+        const second = date.getSeconds(); // 秒を取得する
+      
+        return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+      
+    }
+
 
     //テストを始める前に処理したい事
     beforeEach(async function () {
@@ -64,7 +79,7 @@ describe("NFT contract", function () {
             //connect(owner.address)は、owner.addressで、コントラクトの関数を呼び出している
             //{ value: ethers.utils.parseEther("1") }は、payable関数の実行
             //revertedWithは、エラーになる事を期待する
-            await expect(nft.connect(alice).balanceOfCreater(3,owner.address)).to.be.revertedWith("The NFT does not yours.");
+            await expect(nft.connect(alice).balanceOfCreater(3,owner.address)).to.be.revertedWith("You are not the creator of this token.");
         });
 
         //クリエイターが発行したtoken id
@@ -86,13 +101,13 @@ describe("NFT contract", function () {
         //クリエイターが自分のtokenを購入しようとした時、エラーは表示されるか？
         it("ng check2", async function () {
             //onwerが自分のトークンを購入
-            await expect(nft.connect(owner).buyToken(owner.address,0,1,{ value: 10 ** 13 })).to.be.revertedWith("受け取りアドレスが不正です。");
+            await expect(nft.connect(owner).buyToken(owner.address,0,1,{ value: 10 ** 13 })).to.be.revertedWith("The delivery address is invalid.");
         });
 
         //数量が入っていない場合にエラーが表示されるか？
         it("ng check3", async function () {
             //token id 2（有効期限なし）のトークンを0個購入
-            await expect(nft.connect(alice).buyToken(owner.address,2,0,{ value: ethers.utils.parseEther("0") })).to.be.revertedWith("数量は必須入力です。");
+            await expect(nft.connect(alice).buyToken(owner.address,2,0,{ value: ethers.utils.parseEther("0") })).to.be.revertedWith("Quantity is a required input.");
         });
         
         //在庫数以上を購入しようとしたらエラーが表示されるか？
@@ -124,6 +139,15 @@ describe("NFT contract", function () {
         it("success check1", async function () {
             //token id 2（有効期限なし）のトークンをaliceが購入
             await nft.connect(alice).buyToken(owner.address,2,10,{ value: ethers.utils.parseEther("0.000001") });
+        });
+
+        //（有効期限あり）のトークンを購入
+        it("transfer ok check2", async function () {
+            //aliceがtoken id 1（有効期限あり）のトークンを「2個」購入
+            await nft.connect(alice).buyToken(owner.address,1,2,{ value: ethers.utils.parseEther("0.000002") });
+
+            var expiration = getYmdHis(await nft.connect(alice).getExpiration(1) * 1000);
+            console.log(expiration);
         });
 
     });
@@ -161,14 +185,14 @@ describe("NFT contract", function () {
             //await nft.connect(alice).buyToken(owner.address,1,1,{ value: 10 ** 12 });
             //var timestamp =  Math.floor(Date.now() / 1000) + (24 * 60 * 60);
             //有効期限を取得
-            //expect(await nft.connect(alice).getExpirationDate(1)).to.equal(timestamp);
+            //expect(await nft.connect(alice).getExpiration(1)).to.equal(timestamp);
 
             //token id 1（有効期限あり）のトークンをbobが2個購入
             await nft.connect(bob).buyToken(owner.address,1,1,{ value: 1 * 10 ** 12 });
             await nft.connect(bob).buyToken(owner.address,1,2,{ value: 2 * 10 ** 12 });
             var timestamp =  Math.floor(Date.now() / 1000) + (3 * 24 * 60 * 60);
             //有効期限を取得
-            //expect(await nft.connect(bob).getExpirationDate(1)).to.equal(timestamp);
+            //expect(await nft.connect(bob).getExpiration(1)).to.equal(timestamp);
 
         });
 
@@ -215,8 +239,8 @@ describe("NFT contract", function () {
 
     });
 
-    //トークンのtransferが成功するパターンチェック
-    describe("token transfer success", async function() {
+    //トークンのsafeTransferが成功するパターンチェック
+    describe("token safeTransfer success", async function() {
 
         //（有効期限なし）のトークンを第三者に送る
         it("transfer ok check1", async function () {
@@ -234,8 +258,8 @@ describe("NFT contract", function () {
 
     });
 
-    //トークンのtransferが失敗するパターンチェック
-    describe("token transfer failed", async function() {
+    //トークンのsafeTransferが失敗するパターンチェック
+    describe("token safeTransfer failed", async function() {
 
         //有効期限ありのトークンをonwer以外のユーザーが第三者へ送った場合、エラーが表示されるか？
         it("transfer ng check1", async function () {
@@ -259,6 +283,76 @@ describe("NFT contract", function () {
             await nft.connect(alice).buyToken(owner.address,0,1,{ value: ethers.utils.parseEther("0.00001") });
             //token id 0（有効期限なし）のトークンをaliceからbobへ1個transfer
             await expect(nft.connect(owner).safeTransferFrom(alice.address,owner.address,0,1,[])).to.be.revertedWith("ERC1155: caller is not token owner or approved");
+        });
+
+    });
+
+    
+    //トークンのtransferが成功するパターンチェック
+    describe("token transferFromCreater success", async function() {
+
+        //（有効期限なし）のトークンを第三者に送る
+        it("transfer ok check1", async function () {
+            //token id 2（有効期限なし）のトークンをownerからaliceへ「2個」　transfer
+            await nft.connect(owner).transferFromCreater(owner.address,alice.address,2,2,0);
+            //aliceのtoken id 0 の数量は2
+            expect(await nft.connect(alice).balanceOf(alice.address,2)).to.equal(2);
+        });
+
+        //（有効期限あり）のトークンをownerから第三者に送る
+        it("transfer ok check2", async function () {
+            //token id 1（有効期限あり）のトークンをownereから「2個」bob
+            await nft.connect(owner).transferFromCreater(owner.address,bob.address,1,3,1);
+            //bobのtoken id 1 の数量は1
+            expect(await nft.connect(bob).balanceOf(bob.address,1)).to.equal(1);
+
+            var expiration = getYmdHis(await nft.connect(bob).getExpiration(1) * 1000);
+            console.log(expiration);
+        });
+
+    });
+
+    //トークンのtransferが失敗するパターンチェック
+    describe("token transferFromCreater failed", async function() {
+
+        //クリエイター以外のユーザーが第三者へ送った場合、エラーが表示されるか？
+        it("transfer ng check1", async function () {
+            //token id 1（有効期限あり）のトークンをaliceが購入
+            await nft.connect(alice).buyToken(owner.address,1,1,{ value: ethers.utils.parseEther("0.000001") });
+            //token id 1（有効期限あり）のトークンをaliceからbob
+            await expect(nft.connect(alice).transferFromCreater(alice.address,bob.address,1,1,1)).to.be.revertedWith("You are not the creator of this token.");
+        });
+
+        //クリエイターが自分の所有数以上のトークンを送ろうとした場合、エラーがでるか？
+        it("transfer ng check2", async function () {
+            //token id 0（有効期限なし）のトークンをownerからbobへ2個transfer
+            await expect(nft.connect(owner).transferFromCreater(owner.address,bob.address,0,2,0)).to.be.revertedWith("The quantity entered exceeds the stock amount.");
+        });
+
+        //第三者が、勝手に他人のトークンを自分へ送ろうとした場合、エラーがでるか？
+        it("transfer ng check3", async function () {
+            //token id 0（有効期限なし）のトークンを1個aliceが購入
+            await nft.connect(alice).buyToken(owner.address,0,1,{ value: ethers.utils.parseEther("0.00001") });
+            //token id 0（有効期限なし）のトークンをaliceからbobへ1個transfer
+            await expect(nft.connect(bob).transferFromCreater(alice.address,bob.address,0,1,0)).to.be.revertedWith("You are not the creator of this token.");
+        });
+
+        //クリエイターが存在しないトークンを送ろうとした場合、エラーがでるか？
+        it("transfer ng check4", async function () {
+            //token id 5のトークンをownerからbobへ2個transfer
+            await expect(nft.connect(owner).transferFromCreater(owner.address,bob.address,5,2,0)).to.be.revertedWith("The NFT does not exist.");
+        });
+
+        //クリエイターが自分自身へトークンを送信した場合、エラーがでるか？
+        it("transfer ng check5", async function () {
+            //token id 5のトークンをownerからbobへ2個transfer
+            await expect(nft.connect(owner).transferFromCreater(owner.address,owner.address,2,2,0)).to.be.revertedWith("The delivery address is invalid.");
+        });
+
+        //クリエイターが数量0でトークンを送信した場合、エラーがでるか？
+        it("transfer ng check6", async function () {
+            //token id 2のトークンをownerからaliceへ0個transfer
+            await expect(nft.connect(owner).transferFromCreater(owner.address,alice.address,2,0,0)).to.be.revertedWith("Quantity is a required input.");
         });
 
     });
@@ -292,7 +386,7 @@ describe("NFT contract", function () {
         //他人の所有トークンをburnしようとした場合、エラーがでるか？
         it("burn ng check2", async function () {
             //aliceがtoken id 0（有効数1）のトークンを1個焼却
-            await expect(nft.connect(alice).burn(0,1)).to.be.revertedWith("The NFT does not yours.");
+            await expect(nft.connect(alice).burn(0,1)).to.be.revertedWith("You are not the creator of this token.");
         });
 
         //焼却数が未入力の場合、エラーがでるか？
@@ -369,7 +463,7 @@ describe("NFT contract", function () {
 
         //aliceが自分が発行していないトークンのtoken id 0のコストを変更
         it("update cost ng1", async function () {
-            await expect(nft.connect(alice).updateCost(0,10 ** 10)).to.be.revertedWith("The NFT does not yours.");
+            await expect(nft.connect(alice).updateCost(0,10 ** 10)).to.be.revertedWith("You are not the creator of this token.");
         });
 
         //トークンのコストを0に変更した場合はエラー
