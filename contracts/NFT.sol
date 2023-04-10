@@ -1,6 +1,6 @@
 /**
 *ERC-1155: Multi Token Standard
-*snm ver2.1
+*snm ver2.2
 *【このコントラクトの概要】
 *１つのコントラクトで、複数のユーザーがNFTを発行できる仕様
 
@@ -12,8 +12,8 @@
 *metadataのURIは、creator address 毎に紐づいている
 *creator がtokenをtransferする時も、有効期限を付与できる
 
-*【v2とv2.1の主な変更点】
-*transfer関数のoverride
+*【v2.1とv2.2の主な変更点】
+*transferFromCreater関数の追加
 
 */
 // SPDX-License-Identifier: MIT
