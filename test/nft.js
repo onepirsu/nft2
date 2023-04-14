@@ -282,13 +282,72 @@ describe("NFT contract", function () {
             //token id 0（有効期限なし）のトークンを1個aliceが購入
             await nft.connect(alice).buyToken(owner.address,0,1,{ value: ethers.utils.parseEther("0.00001") });
             //token id 0（有効期限なし）のトークンをaliceからbobへ1個transfer
-            await expect(nft.connect(owner).safeTransferFrom(alice.address,owner.address,0,1,[])).to.be.revertedWith("ERC1155: caller is not token owner or approved");
+            await expect(nft.connect(owner).safeTransferFrom(alice.address,bob.address,0,1,[])).to.be.revertedWith("ERC1155: caller is not token owner or approved");
         });
 
     });
 
     
-    //トークンのtransferが成功するパターンチェック
+    //トークンのsafeBatchTransferが成功するパターンチェック
+    describe("token safeBatchTransfer success", async function() {
+
+        //（有効期限なし）のトークンを第三者に送る
+        it("transfer ok check1", async function () {
+            //token id 0（有効期限なし）のトークンをaliceが1個購入
+            await nft.connect(alice).buyToken(owner.address,0,1,{ value: ethers.utils.parseEther("0.00001") });
+            //token id 2（有効期限なし）のトークンをaliceが2個購入
+            await nft.connect(alice).buyToken(owner.address,2,2,{ value: ethers.utils.parseEther("0.0000002") });
+            //token id [0,2]（有効期限なし）のトークンをaliceからbobへtransfer
+            await nft.connect(alice).safeBatchTransferFrom(alice.address,bob.address,[0,2],[1,2],[]);
+        });
+
+        //（有効期限あり）のトークンをownerから第三者に送る
+        it("transfer ok check2", async function () {
+            //token id [0,1（有効期限あり）]のトークンをownereからbob
+            await nft.connect(owner).safeBatchTransferFrom(owner.address,bob.address,[0,1],[1,1],[]);
+        });
+
+    });
+
+    //トークンのsafeBatchTransferが失敗するパターンチェック
+    describe("token safeBatchTransfer failed", async function() {
+
+        //有効期限ありのトークンをonwer以外のユーザーが第三者へ送った場合、エラーが表示されるか？
+        it("transfer ng check1", async function () {
+            //token id 1（有効期限あり）のトークンをaliceが購入
+            await nft.connect(alice).buyToken(owner.address,1,1,{ value: ethers.utils.parseEther("0.000001") });
+            //token id 2（有効期限なし）のトークンをaliceが2個購入
+            await nft.connect(alice).buyToken(owner.address,2,2,{ value: ethers.utils.parseEther("0.0000002") });
+            //token id [1（有効期限あり）,2]のトークンをaliceからbob
+            await expect(nft.connect(alice).safeBatchTransferFrom(alice.address,bob.address,[1,2],[1,1],[])).to.be.revertedWith("Transfer not allowed");
+        });
+
+        //自分の所有数以上のトークンを送ろうとした場合、エラーがでるか？
+        it("transfer ng check2", async function () {
+            //token id 0（有効期限なし）のトークンを1個aliceが購入
+            await nft.connect(alice).buyToken(owner.address,0,1,{ value: ethers.utils.parseEther("0.00001") });
+            //token id 2（有効期限なし）のトークンをaliceが2個購入
+            await nft.connect(alice).buyToken(owner.address,2,2,{ value: ethers.utils.parseEther("0.0000002") });
+            //token id 0（有効期限なし）のトークンをaliceからbobへ2個ずつtransfer
+            await expect(nft.connect(alice).safeBatchTransferFrom(alice.address,bob.address,[0,2],[2,2],[])).to.be.revertedWith("ERC1155: insufficient balance for transfer");
+        });
+
+        //第三者が、勝手に他人のトークンを自分へ送ろうとした場合、エラーがでるか？
+        it("transfer ng check3", async function () {
+            //token id 0（有効期限なし）のトークンを1個aliceが購入
+            await nft.connect(alice).buyToken(owner.address,0,1,{ value: ethers.utils.parseEther("0.00001") });
+            //token id [0,2]のトークンをaliceからbobへ1個ずつtransfer
+            await expect(nft.connect(owner).safeBatchTransferFrom(alice.address,bob.address,[0,1],[1,1],[])).to.be.revertedWith("ERC1155: caller is not token owner or approved");
+        });
+
+        //自分の所有数以上のトークンを送ろうとした場合、エラーがでるか？
+        it("transfer ng check4", async function () {
+            //token id [0,1,2]のトークンをownerからbobへ2個ずつtransfer
+            await expect(nft.connect(owner).safeBatchTransferFrom(owner.address,bob.address,[0,1,2],[2,2,2],[])).to.be.revertedWith("ERC1155: insufficient balance for transfer");
+        });
+    });
+
+    //トークンのtransferCreaterが成功するパターンチェック
     describe("token transferFromCreater success", async function() {
 
         //（有効期限なし）のトークンを第三者に送る
@@ -311,6 +370,7 @@ describe("NFT contract", function () {
         });
 
     });
+    
 
     //トークンのtransferが失敗するパターンチェック
     describe("token transferFromCreater failed", async function() {
